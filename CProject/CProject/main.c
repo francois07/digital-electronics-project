@@ -23,6 +23,7 @@
 #include <stdlib.h>         // C library. Needed for conversion function
 #include "uart.h"           // Peter Fleury's UART library
 #include "twi.h"            // TWI library for AVR-GCC
+#include "lcd.h"
 
 /* Variables ---------------------------------------------------------*/
 typedef enum {              // FSM declaration
@@ -41,6 +42,11 @@ typedef enum {              // FSM declaration
  **********************************************************************/
 int main(void)
 {
+    // Initialize LCD Display
+    //lcd_init(LCD_DISP_ON);
+    //lcd_gotoxy(8,1);
+    //lcd_puts("test");
+    
     // Initialize I2C (TWI)
     twi_init();
 
@@ -49,7 +55,7 @@ int main(void)
 
     // Configure 16-bit Timer/Counter1 to update FSM
     // Set prescaler to 33 ms and enable interrupt
-    TIM1_overflow_4s();
+    TIM1_overflow_33ms();
     TIM1_overflow_interrupt_enable();
 
     // Enables interrupts by setting the global interrupt mask
@@ -88,41 +94,48 @@ ISR(TIMER1_OVF_vect)
     {
     // Do nothing
     case STATE_IDLE:
-        // Move to the next state
-        uart_puts("\nIDLE");
+        lcd_gotoxy(1,1);
+        //lcd_puts("      ");
+        uart_puts("IDLE: \n");
         state = STATE_HUMID;
         break;
     
     // Get humidity
     case STATE_HUMID:
-        // WRITE YOUR CODE HERE
-        uart_puts("\nHUMID: ");
-        // Move to the next state
+        lcd_gotoxy(1,1);
+        //lcd_puts("      ");
+        uart_puts("HUMID: \n");
         state = STATE_TEMP;
         break;
 
     // Get temperature
     case STATE_TEMP:
         // WRITE YOUR CODE HERE
-        uart_puts("\nTEMP: ");
+        //lcd_gotoxy(1,1);
+        //lcd_puts("      ");
+        uart_puts("TEMP: \n");
+        
+        twi_start((addr<<1) + TWI_WRITE);
         twi_write(0x02);
         twi_stop();
         
-        result = twi_start((addr<<1) + TWI_READ);
+        twi_start((addr<<1) + TWI_READ);
         result = twi_read_ack();
         
         itoa(result, uart_string, 10);
         
+        //lcd_gotoxy(1, 2);
+        //lcd_puts("      ");
         uart_puts(uart_string);
-        uart_puts(" ");
         // Move to the next state
         state = STATE_CHECK;
         break;
 
     // Get checksum
     case STATE_CHECK:
-        // WRITE YOUR CODE HERE
-        uart_puts("\nCHECKSUM: ");
+        //lcd_gotoxy(1,1);
+        //lcd_puts("      ");
+        uart_puts("CHECKSUM: \n");
         // Move to the next state
         state = STATE_IDLE;
         break;
