@@ -15,8 +15,10 @@
 #ifndef F_CPU
 # define F_CPU 16000000  // CPU frequency in Hz required for UART_BAUD_SELECT
 #endif
+#define MOTOR1 PD0
 
 /* Includes ----------------------------------------------------------*/
+#include <util/delay.h>     // Functions for busy-wait delay loops
 #include <avr/io.h>         // AVR device-specific IO definitions
 #include <avr/interrupt.h>  // Interrupts standard C library for AVR-GCC
 #include "timer.h"          // Timer library for AVR-GCC
@@ -24,6 +26,7 @@
 #include "uart.h"           // Peter Fleury's UART library
 #include "twi.h"            // TWI library for AVR-GCC
 #include "lcd.h"
+#include "gpio.h"           // GPIO library for AVR-GCC
 
 /* Variables ---------------------------------------------------------*/
 typedef enum {              // FSM declaration
@@ -43,36 +46,67 @@ typedef enum {              // FSM declaration
 int main(void)
 {
     // Initialize LCD Display
-    //lcd_init(LCD_DISP_ON);
-    //lcd_gotoxy(8,1);
-    //lcd_puts("test");
+    lcd_init(LCD_DISP_ON);
+    lcd_gotoxy(0, 0);
+    lcd_puts("De2");
+    lcd_gotoxy(0, 1);
+    lcd_puts("Meteo Station");
     
     // Initialize I2C (TWI)
     twi_init();
 
-    // Initialize UART to asynchronous, 8N1, 9600
-    uart_init(UART_BAUD_SELECT(9600, F_CPU));
-
     // Configure 16-bit Timer/Counter1 to update FSM
     // Set prescaler to 33 ms and enable interrupt
-    TIM1_overflow_33ms();
+    TIM1_overflow_4s();
     TIM1_overflow_interrupt_enable();
 
     // Enables interrupts by setting the global interrupt mask
     sei();
+    
+    // Configure the first motor at port A
+    GPIO_config_output(&DDRD, MOTOR1);
+    GPIO_write_low(&PORTD, MOTOR1);
 
-    // Put strings to ringbuffer for transmitting via UART
-    uart_puts("\r\nScan I2C-bus for devices:\r\n");
 
     // Infinite loop
     while (1)
     {
         /* Empty loop. All subsequent operations are performed exclusively 
          * inside interrupt service routines ISRs */
+        //GPIO_toggle(&PORTD, MOTOR1);
+        //_delay_us(2000);
+        //GPIO_toggle(&PORTD, MOTOR1);
+        //_delay_us(1000);
+        //
+        //GPIO_toggle(&PORTD, MOTOR1);
+        //_delay_us(1000);
+        //GPIO_toggle(&PORTD, MOTOR1);
+        //_delay_us(1000);    
     }
 
     // Will never reach this
     return 0;
+}
+
+void displaySensor(char title[], uint8_t slave_adress, uint8_t reg_adress)
+{
+    uint8_t result = 1;
+    char uart_string[] = "000";
+    
+    lcd_gotoxy(1, 0);
+    lcd_puts(title);
+        
+    twi_start((slave_adress<<1) + TWI_WRITE);
+    twi_write(reg_adress);
+    twi_stop();
+        
+    twi_start((slave_adress<<1) + TWI_READ);
+    result = twi_read_ack();
+        
+    itoa(result, uart_string, 10);
+        
+    lcd_gotoxy(0, 1);
+    lcd_puts(uart_string);
 }
 
 /* Interrupt service routines ----------------------------------------*/
@@ -83,65 +117,33 @@ int main(void)
  **********************************************************************/
 ISR(TIMER1_OVF_vect)
 {
-    static state_t state = STATE_IDLE;  // Current state of the FSM
+    static state_t state = STATE_TEMP;  // Current state of the FSM
     static uint8_t addr = 0x5c;  // I2C slave address of DHT12
-    //uint8_t value;               // Data obtained from the I2C bus
-    char uart_string[] = "000";  // String for converting numbers by itoa()
-    uint8_t result = 1;
 
     // FSM
     switch (state)
     {
-    // Do nothing
-    case STATE_IDLE:
-        lcd_gotoxy(1,1);
-        //lcd_puts("      ");
-        uart_puts("IDLE: \n");
-        state = STATE_HUMID;
-        break;
-    
     // Get humidity
     case STATE_HUMID:
-        lcd_gotoxy(1,1);
-        //lcd_puts("      ");
-        uart_puts("HUMID: \n");
+        lcd_clrscr();
+
+        displaySensor("HUMIDITY", addr, 0x00);
+
         state = STATE_TEMP;
         break;
 
     // Get temperature
     case STATE_TEMP:
         // WRITE YOUR CODE HERE
-        //lcd_gotoxy(1,1);
-        //lcd_puts("      ");
-        uart_puts("TEMP: \n");
-        
-        twi_start((addr<<1) + TWI_WRITE);
-        twi_write(0x02);
-        twi_stop();
-        
-        twi_start((addr<<1) + TWI_READ);
-        result = twi_read_ack();
-        
-        itoa(result, uart_string, 10);
-        
-        //lcd_gotoxy(1, 2);
-        //lcd_puts("      ");
-        uart_puts(uart_string);
-        // Move to the next state
-        state = STATE_CHECK;
-        break;
+        lcd_clrscr();
 
-    // Get checksum
-    case STATE_CHECK:
-        //lcd_gotoxy(1,1);
-        //lcd_puts("      ");
-        uart_puts("CHECKSUM: \n");
-        // Move to the next state
-        state = STATE_IDLE;
+        displaySensor("TEMPERATURE", addr, 0x02);
+
+        state = STATE_HUMID;
         break;
 
     default:
-        state = STATE_IDLE;
+        state = STATE_TEMP;
         break;
     }
 }
