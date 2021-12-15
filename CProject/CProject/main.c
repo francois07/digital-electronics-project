@@ -16,6 +16,8 @@
 # define F_CPU 16000000  // CPU frequency in Hz required for UART_BAUD_SELECT
 #endif
 #define MOTOR1 PD0
+#define MOTOR2 PD1
+
 
 /* Includes ----------------------------------------------------------*/
 #include <util/delay.h>     // Functions for busy-wait delay loops
@@ -36,17 +38,57 @@ typedef enum {              // FSM declaration
     STATE_CHECK
 } state_t;
 
+uint8_t customChar[24] = {
+  0b00000,
+  0b00000,
+  0b10101,
+  0b01110,
+  0b11111,
+  0b01110,
+  0b10101,
+  0b00000,
+
+  0b00000,
+  0b01110,
+  0b11111,
+  0b11111,
+  0b10101,
+  0b00100,
+  0b10100,
+  0b01100,
+  
+  0b00000,
+  0b00111,
+  0b00101,
+  0b00111,
+  0b00000,
+  0b00000,
+  0b00000,
+  0b00000
+};
+
 /* Function definitions ----------------------------------------------*/
+
 /**********************************************************************
- * Function: Main function where the program execution begins
- * Purpose:  Use Timer/Counter1 and send I2C (TWI) address every 33 ms.
- *           Send information about scanning process to UART.
- * Returns:  none
+ * Function:    Main function where the program execution begins
+ * Purpose:     Use Timer/Counter1 and send I2C (TWI) address every 33 ms.
+ *              Send information about scanning process to UART.
+ * Returns:     none
  **********************************************************************/
 int main(void)
 {
     // Initialize LCD Display
     lcd_init(LCD_DISP_ON);
+    
+	lcd_command(1 << LCD_CGRAM);
+	for (uint8_t i = 0; i < 24; i++)
+	{
+    	// Store all new chars to memory line by line
+    	lcd_data(customChar[i]);
+	}
+	// Set DDRAM address
+	lcd_command(1 << LCD_DDRAM);
+
     lcd_gotoxy(0, 0);
     lcd_puts("De2");
     lcd_gotoxy(0, 1);
@@ -63,9 +105,12 @@ int main(void)
     // Enables interrupts by setting the global interrupt mask
     sei();
     
-    // Configure the first motor at port A
+    // Configure the motors at port D
     GPIO_config_output(&DDRD, MOTOR1);
+    GPIO_config_output(&DDRD, MOTOR2);
+    
     GPIO_write_low(&PORTD, MOTOR1);
+    GPIO_write_low(&PORTD, MOTOR2);
 
 
     // Infinite loop
@@ -73,25 +118,50 @@ int main(void)
     {
         /* Empty loop. All subsequent operations are performed exclusively 
          * inside interrupt service routines ISRs */
-        //GPIO_toggle(&PORTD, MOTOR1);
-        //_delay_us(2000);
-        //GPIO_toggle(&PORTD, MOTOR1);
-        //_delay_us(1000);
-        //
-        //GPIO_toggle(&PORTD, MOTOR1);
-        //_delay_us(1000);
-        //GPIO_toggle(&PORTD, MOTOR1);
-        //_delay_us(1000);    
+        for(uint8_t i = 0; i < 20; i++){
+            _delay_ms(40);
+            GPIO_toggle(&PORTD, MOTOR1);
+            GPIO_toggle(&PORTD, MOTOR2);
+            _delay_us(1500);
+            GPIO_toggle(&PORTD, MOTOR1);
+            GPIO_toggle(&PORTD, MOTOR2);
+        }
+        for(uint8_t i=0; i < 20; i++){
+            _delay_ms(40);
+            GPIO_toggle(&PORTD, MOTOR1);
+            GPIO_toggle(&PORTD, MOTOR2);
+            _delay_ms(2);
+            GPIO_toggle(&PORTD, MOTOR1);
+            GPIO_toggle(&PORTD, MOTOR2);
+        }
+        for(uint8_t i=0; i < 20; i++){
+            _delay_ms(40);
+            GPIO_toggle(&PORTD, MOTOR1);
+            GPIO_toggle(&PORTD, MOTOR2);
+            _delay_ms(1);
+            GPIO_toggle(&PORTD, MOTOR1);
+            GPIO_toggle(&PORTD, MOTOR2);
+        }
+
     }
 
     // Will never reach this
     return 0;
 }
 
-void displaySensor(char title[], uint8_t slave_adress, uint8_t reg_adress)
+/**********************************************************************
+ * Function:    Display Sensor Function
+ * Purpose:     Use LCD and sensor to display informations such as current 
+ *              temperature, humidity, ...
+ * Input:       title           Title to be display along the data
+                slave_adress    Sensor slave adress
+                reg_adress      Data register address on the sensor
+ * Returns:     none
+ **********************************************************************/
+uint8_t displaySensor(char title[], uint8_t slave_adress, uint8_t reg_adress)
 {
     uint8_t result = 1;
-    char uart_string[] = "000";
+    char res_string[] = "000";
     
     lcd_gotoxy(1, 0);
     lcd_puts(title);
@@ -103,13 +173,16 @@ void displaySensor(char title[], uint8_t slave_adress, uint8_t reg_adress)
     twi_start((slave_adress<<1) + TWI_READ);
     result = twi_read_ack();
         
-    itoa(result, uart_string, 10);
+    itoa(result, res_string, 10);
         
     lcd_gotoxy(0, 1);
-    lcd_puts(uart_string);
+    lcd_puts(res_string);
+    
+    return result;
 }
 
 /* Interrupt service routines ----------------------------------------*/
+
 /**********************************************************************
  * Function: Timer/Counter1 overflow interrupt
  * Purpose:  Update Finite State Machine and get humidity, temperature,
@@ -119,6 +192,7 @@ ISR(TIMER1_OVF_vect)
 {
     static state_t state = STATE_TEMP;  // Current state of the FSM
     static uint8_t addr = 0x5c;  // I2C slave address of DHT12
+    static uint8_t res;
 
     // FSM
     switch (state)
@@ -126,18 +200,30 @@ ISR(TIMER1_OVF_vect)
     // Get humidity
     case STATE_HUMID:
         lcd_clrscr();
-
-        displaySensor("HUMIDITY", addr, 0x00);
+        
+        res = displaySensor("HUMIDITY", addr, 0x00);
+        lcd_puts("% ");
+        
+        if (res >= 16)
+        {
+            lcd_putc(1);
+        }
 
         state = STATE_TEMP;
         break;
 
     // Get temperature
     case STATE_TEMP:
-        // WRITE YOUR CODE HERE
         lcd_clrscr();
 
-        displaySensor("TEMPERATURE", addr, 0x02);
+        res = displaySensor("TEMPERATURE", addr, 0x02);
+        lcd_putc(2);
+        lcd_puts("C ");
+        
+        if (res >= 16)
+        {
+            lcd_putc(0);
+        }
 
         state = STATE_HUMID;
         break;
