@@ -19,10 +19,8 @@
 
 /* Variables ---------------------------------------------------------*/
 typedef enum {              // FSM declaration
-    STATE_IDLE = 1,
-    STATE_HUMID,
     STATE_TEMP,
-    STATE_CHECK
+    STATE_HUMID
 } state_t;
 
 uint8_t customChar[24] = {
